@@ -5,12 +5,21 @@ declare(strict_types=1);
 namespace Djnew\MoonShineNestedSet\View\Components;
 
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
-use MoonShine\ActionButtons\{ActionButton, ActionButtons};
-use MoonShine\Buttons\{DeleteButton, DetailButton, EditButton};
-use MoonShine\Components\MoonshineComponent;
-use MoonShine\Resources\ModelResource;
-use MoonShine\Traits\HasResource;
+use MoonShine\Contracts\Core\ResourceContract;
+use MoonShine\Core\Traits\HasResource;
+use MoonShine\Laravel\Buttons\DeleteButton;
+use MoonShine\Laravel\Buttons\DetailButton;
+use MoonShine\Laravel\Buttons\EditButton;
+use MoonShine\Laravel\Resources\CrudResource;
+use MoonShine\Laravel\Resources\ModelResource;
+use MoonShine\Support\AlpineJs;
+use MoonShine\Support\Enums\JsEvent;
+use MoonShine\UI\Collections\ActionButtons;
+use MoonShine\UI\Components\ActionButton;
+use MoonShine\UI\Components\MoonShineComponent;
+use Throwable;
 
 /**
  * @method static static make(ModelResource $resource)
@@ -25,13 +34,14 @@ final class NestdSetComponent extends MoonshineComponent
 
     public function __construct(ModelResource $resource)
     {
+        parent::__construct();
         $this->setResource($resource);
     }
 
 
     public function setFragmentName(string $eventName): static
     {
-        $this->fragmentName = 'fragment-updated-' . $eventName;
+        $this->fragmentName = AlpineJs::event(JsEvent::FRAGMENT_UPDATED, $eventName);
 
         return $this;
     }
@@ -41,6 +51,9 @@ final class NestdSetComponent extends MoonshineComponent
         return $this->getResource()->getItems();
     }
 
+    /**
+     * @throws Throwable
+     */
     protected function viewData(): array
     {
         $page = (int)request()->input('page', 1);
@@ -48,14 +61,14 @@ final class NestdSetComponent extends MoonshineComponent
         $upDownButtons = [];
         if($this->getResource()->showUpDownButtons){
             $upDownButtons = [
-                ActionButton::make('', $this->getResource()->url())
-                    ->icon('heroicons.chevron-up')
+                ActionButton::make('', $this->getResource()->getUrl())
+                    ->icon('chevron-up')
                     ->method('nestedsetUp', events: $events, resource: $this->getResource())
                     ->customAttributes([
                         'class' => 'nested-tree-action__up',
                     ]),
-                ActionButton::make('', $this->getResource()->url())
-                    ->icon('heroicons.chevron-down')
+                ActionButton::make('', $this->getResource()->getUrl())
+                    ->icon('chevron-down')
                     ->method('nestedsetDown', events: $events, resource: $this->getResource())
                     ->customAttributes([
                         'class' => 'nested-tree-action__down',
@@ -67,8 +80,9 @@ final class NestdSetComponent extends MoonshineComponent
             'page'         => $page,
             'fragmentName' => $this->fragmentName ?? '',
             'resource'     => $this->getResource(),
-            'route'        => $this->getResource()->route('nestedset'),
+            'route'        => $this->getResource()->getAsyncMethodUrl('nestedset'),
             'buttons'      => function ($item) use($page, $events, $upDownButtons) {
+                /** @var CrudResource $resource */
                 $resource = $this->getResource()->setItem($item);
 
                 return ActionButtons::make([
@@ -77,7 +91,7 @@ final class NestdSetComponent extends MoonshineComponent
                     DetailButton::for($resource),
                     EditButton::for($resource, 'tree'),
                     DeleteButton::for($resource, 'tree'),
-                ])->fillItem($item);
+                ])->fill($resource->getCastedData());
             }
         ];
     }

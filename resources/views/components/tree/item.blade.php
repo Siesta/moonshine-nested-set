@@ -19,12 +19,12 @@
     <div class="nested-element__data handle">
         <div class="nested-element__data-item">
             @if($resource->sortable())
-                <x-moonshine::icon icon="heroicons.bars-3-bottom-right" />
+                <x-moonshine::icon icon="bars-3-bottom-right" />
             @endif
 
             <div class="font-bold">
                 <x-moonshine::badge color="purple">{{ $item->getKey() }}</x-moonshine::badge>
-                {{ $item->{$resource->column()} }}
+                {{ $item->{$resource->getColumn()} }}
             </div>
 
             {!! $resource->itemContent($item) !!}
@@ -38,7 +38,7 @@
     </div>
 
         <ul
-            x-data="nestedset('{{ $resource->route('nestedset') }}', 'nested')"
+            x-data="nestedset('{{ $resource->getAsyncMethodUrl('nestedset') }}', 'nested')"
             data-id="{{ $item->getKey() }}"
             data-handle=".handle"
             data-animation="150"
