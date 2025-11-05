@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace Djnew\MoonShineNestedSet\Resources;
 
 use Illuminate\Contracts\Database\Eloquent\Builder;
+use Illuminate\Contracts\Pagination\CursorPaginator;
+use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\{Route};
-use MoonShine\Http\Requests\Resources\ViewAnyFormRequest;
-use MoonShine\Resources\ModelResource;
+use Illuminate\Support\Collection;
+use Illuminate\Support\LazyCollection;
+use MoonShine\Laravel\Http\Requests\Resources\ViewAnyFormRequest;
+use MoonShine\Laravel\MoonShineRequest;
+use MoonShine\Laravel\Resources\ModelResource;
+use MoonShine\Support\Enums\SortDirection;
 
 abstract class NestedSetResource extends ModelResource
 {
     public string $treeRelationName = 'childrenNestedset';
-    protected string $sortDirection = 'ASC';
+    protected SortDirection $sortDirection = SortDirection::ASC;
 
     protected bool $usePagination = false;
 
@@ -26,20 +31,20 @@ abstract class NestedSetResource extends ModelResource
     abstract public function treeKey(): ?string;
 
 
-    public function getItems()
+    public function getItems(): Collection|LazyCollection|CursorPaginator|Paginator
     {
         return $this->isPaginationUsed()
-            ? $this->model::defaultOrder()
+            ? $this->paginate()
                 ->whereNull($this->treeKey())
                 ->paginate($this->itemsPerPage)
-            : $this->model::defaultOrder()
+            : $this->getQuery()
                 ->whereNull($this->treeKey())
                 ->get();
     }
 
     public function getQuery(): Builder
     {
-        return parent::query()->whereNull($this->treeKey())->with($this->treeRelationName);
+        return parent::getQuery()->whereNull($this->treeKey())->with($this->treeRelationName);
     }
 
     public function sortDirection(): string
@@ -77,56 +82,50 @@ abstract class NestedSetResource extends ModelResource
         $item?->insertBeforeNode($neighbor);
     }
 
-    protected function resolveRoutes(): void
-    {
-        parent::resolveRoutes();
+    public function nestedset(MoonShineRequest $request) {
+        /** @var NestedsetResource $resource */
+        $resource = $request->getResource();
+        $keyName  = $resource->getModel()->getKeyName();
+        $model    = $resource->getModel();
 
 
-        Route::post('nestedset', function (ViewAnyFormRequest $request) {
-            /** @var NestedsetResource $resource */
-            $resource = $request->getResource();
-            $keyName  = $resource->getModel()->getKeyName();
-            $model    = $resource->getModel();
+        if ($resource->treeKey() && $request->str('data')->isNotEmpty()) {
 
+            $id       = $request->get('id');
+            $index    = $request->integer('index');
+            $parentId = $request->get('parent');
 
-            if ($resource->treeKey() && $request->str('data')->isNotEmpty()) {
+            $element = $model
+                ->newModelQuery()
+                ->firstWhere($keyName, $id);
 
-                $id       = $request->get('id');
-                $index    = $request->integer('index');
-                $parentId = $request->get('parent');
+            $caseStatement = $request
+                ->str('data')
+                ->explode(',');
 
-                $element = $model
-                    ->newModelQuery()
-                    ->firstWhere($keyName, $id);
+            $setAfter = $index > 0;
+            if (false !== $caseStatement->search($id) && $caseStatement->count() > 1) {
+                $neighbor = $resource->getModel()->newModelQuery()
+                    ->firstWhere(
+                        $keyName,
+                        $setAfter ? $caseStatement[--$index] : $caseStatement[++$index]
+                    );
 
-                $caseStatement = $request
-                    ->str('data')
-                    ->explode(',');
-
-                $setAfter = $index > 0;
-                if (false !== $caseStatement->search($id) && $caseStatement->count() > 1) {
-                    $neighbor = $resource->getModel()->newModelQuery()
-                        ->firstWhere(
-                            $keyName,
-                            $setAfter ? $caseStatement[--$index] : $caseStatement[++$index]
-                        );
-
-                    if ($neighbor) {
-                        if ($setAfter) {
-                            $element?->insertAfterNode($neighbor);
-                        } else {
-                            $element?->insertBeforeNode($neighbor);
-                        }
+                if ($neighbor) {
+                    if ($setAfter) {
+                        $element?->insertAfterNode($neighbor);
+                    } else {
+                        $element?->insertBeforeNode($neighbor);
                     }
-                }
-
-                if ($element->{$this->treeKey()} !== $parentId) {
-                    $element?->setParentId($parentId)->save();
-                    $resource->getModel()?->fixTree();
                 }
             }
 
-            return response()->noContent();
-        })->name('nestedset');
+            if ($element->{$this->treeKey()} !== $parentId) {
+                $element?->setParentId($parentId)->save();
+                $resource->getModel()?->fixTree();
+            }
+        }
+
+        return response()->noContent();
     }
 }
